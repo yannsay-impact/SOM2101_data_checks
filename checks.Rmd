@@ -1,0 +1,305 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+*This is a test. let me know what you think.*
+
+# Setting workspace
+```{r, echo=FALSE, warning=F}
+source("functions.R")
+library(tidyverse)
+
+readxl::excel_sheets("REACH_SOM2101_JMCNA_CleanData_v5.xlsx")
+cleann <- readxl::read_excel("REACH_SOM2101_JMCNA_CleanData_v5.xlsx", "Clean_Data")
+logg <- readxl::read_excel("REACH_SOM2101_JMCNA_CleanData_v5.xlsx", "Cleaning_Log")
+raww <- readxl::read_excel("REACH_SOM2101_JMCNA_CleanData_v5.xlsx", "Raw_Data")
+dell <- readxl::read_excel("REACH_SOM2101_JMCNA_CleanData_v5.xlsx", "Deletions")
+```
+
+# Checking your cleaning log
+I am checking your cleaning log against your clean data. 
+
+```{r, echo=FALSE, warning=F}
+old_new_values <- mapply(old_new, 
+                          cleaning_log = split(logg, row.names(logg)), 
+                          variable = "Question", 
+                          MoreArgs = list(
+                            data_raw = raww,
+                            data_clean = cleann,
+                            uuid_raw = "uuid",
+                            uuid_clean = "uuid",
+                            uuid_cleaning_log = "uuid"
+                          ),
+                          SIMPLIFY = F) %>% do.call(rbind, .)
+dd <- logg %>% 
+  mutate(binding = paste0(uuid, Question)) %>%
+  left_join(old_new_values) %>% 
+  mutate(check_raw = `Old Value` == value_raw,
+         check_clean = `New Value` == value_clean) %>%
+  select(-c(binding, ID, `Follow-up`, Enumerator, Community, `Modified by?`, Notes, check_raw), 
+         uuid, Question,`Old Value`, `New Value`, value_raw, value_clean, check_clean, Reason)
+```
+
+```{r}
+dd$check_clean %>% table(useNA = "ifany")
+```
+
+Out of your 25k entries, you have 12k correct, 4k not correct and 10k as NA. 
+
+## NA's
+Let's now just focus on the NA
+```{r}
+dd %>% 
+  filter(is.na(check_clean)) %>% 
+  group_by(Question) %>%
+  tally() %>%
+  arrange(desc(n))
+```
+
+### How-to read
+```{r}
+dd %>% head()
+```
+Question: from your cleaning log   
+uuid: uuid   
+Old Value: from your cleaning log  
+New value: from your cleaning log  
+Reason: from your cleaning log  
+value_raw : value from raw dataset  
+value_clean: value from clean dataset  
+check_clean: New Value (from cleaning log) is the same as value_clean (from clean data)  
+
+
+### ALL 
+```{r}
+logg %>% filter(Question == "All") %>% mutate(uuid_dup = duplicated(uuid)) 
+```
+there are 1681 survey deleted, there are 1676 in the deletion log.   
+there are 9 uuid duplicated in the cleaning log for deletion  
+
+action: none needed.
+
+### sanitation_features_other: 
+```{r}
+dd %>% filter(Question == "sanitation_features_other", is.na(check_clean)) 
+```
+it seems there are 10% of the household who does not have toilets.  
+
+action: to be check with the skip logic 
+
+### main_source_water_other
+```{r}
+dd %>% filter(Question == "main_source_water_other", is.na(check_clean)) 
+dd %>% 
+  filter(Question == "main_source_water_other", is.na(check_clean)) %>% 
+  select(uuid, `New Value`) %>% 
+  left_join(select(cleann, main_source_water, uuid)) 
+```
+action: Explore what happened, was the "other" recoded?  
+
+### when_arrived_current_location
+```{r}
+dd %>% filter(Question == "when_arrived_current_location", is.na(check_clean)) %>% 
+  View()
+```
+In your cleaning log, the "New Value" is empty, while there is a value in the clean dataset. No reason written  
+action: Explore what happened
+
+### when_leave_place_origin
+```{r}
+dd %>% filter(Question == "when_leave_place_origin", is.na(check_clean)) %>% 
+  View()
+```
+Same as above.  
+
+### 67"
+```{r}
+dd %>% filter(Question == "67", is.na(check_clean))   
+```
+Not sure what 67 variable is for, but same as above. In addition, all of them were turn to 67 while the value were different  
+Action: investigate on your side.
+
+### sanitation_facilities_problems_other
+```{r}
+dd %>% filter(Question == "sanitation_facilities_problems_other", is.na(check_clean)) %>%
+  pull(Reason) %>% table()
+
+dd %>% filter(Question == "sanitation_facilities_problems_other", is.na(check_clean), 
+              Reason != "other options recoded", 
+              Reason != "other options recoded in the choice list") 
+
+dd %>% 
+  filter(Question == "sanitation_facilities_problems_other", is.na(check_clean), 
+         Reason != "other options recoded", 
+         Reason != "other options recoded in the choice list") %>% 
+  select(uuid, `New Value`) %>% 
+  left_join(select(cleann, sanitation_facilities_problems, uuid)) %>% 
+  select(`New Value`, sanitation_facilities_problems) %>% table()
+```
+Same as for main source of water. Check if recoding happened or should happen. 
+Action: explore what happened when recoding other.  
+
+
+### shelter_issues_other
+```{r}
+dd %>% 
+  filter(Question == "shelter_issues_other", is.na(check_clean)) 
+
+dd %>% 
+  filter(Question == "shelter_issues_other", is.na(check_clean))%>% 
+  select(uuid, `New Value`) %>% 
+  left_join(select(cleann, shelter_issues, uuid)) %>% 
+  select(`New Value`, shelter_issues) %>% table()
+```
+It seems there is "no issues". Should it be removed as you did then? Or removed?
+Action: investigate if re-coding correct.
+
+### hh_main_source_income_other
+```{r}
+dd %>% 
+  filter(Question == "hh_main_source_income_other", is.na(check_clean)) %>%
+  select(uuid, `Old Value`) %>% 
+  left_join(select(cleann, shelter_issues, uuid))
+
+dd %>% 
+  filter(Question == "hh_main_source_income_other", is.na(check_clean)) %>% 
+  pull(Reason) %>%
+  table() 
+dd %>% 
+  filter(Question == "hh_main_source_income_other", is.na(check_clean)) %>% 
+  select(uuid, `Old Value`) %>% 
+  left_join(select(cleann, starts_with("hh_main_source_income"), uuid)) 
+```
+does Clarification from choices and Clarification from translation means re-classfied?  
+Action: Check if clarification were correclty re-coded/classified.
+
+### common_type_ids_other
+```{r}
+dd %>% 
+  filter(Question == "common_type_ids_other", is.na(check_clean)) %>%
+  select(uuid, `Old Value`, `New Value`) %>% 
+  left_join(select(cleann, starts_with("common_type_ids"), uuid)) 
+```
+Same as the the others "other"  
+Action: check recoding and action. 
+
+### General comment
+For all others that are removed because of "none", maybe because of missing skip logic during the coding,
+do you need to also remove all the questions? or add a "none" in your select mutiple? Or do you want just to report as
+that and include the "no-issues" in the denominator?
+e.g. do you want to report :
+(1) XX % of households reported to have an issue. From the ones reporting an issue, YY% reported as OPTION1 as an issue.
+(2) Amongst all the households, XX% reported no issues, YY% reported OPTION1 as an issue.
+for (1) you would want to recode the none as missing for all options so that you can use the skiplogic.
+
+## wrong cleaning value. 
+
+```{r}
+dd %>% filter(check_clean == F)
+dd %>% filter(check_clean == F) %>% nrow()
+```
+
+### re-coding FALSE and TRUE to 0/1
+```{r}
+logg2 <- logg %>% 
+  mutate(`New Value` = ifelse(`New Value` == "FALSE", 0, `New Value`), 
+         `New Value`= ifelse(`New Value` == "TRUE", 1, `New Value`))
+
+old_new_values2 <- mapply(old_new, 
+                          cleaning_log = split(logg2, row.names(logg2)), 
+                          variable = "Question", 
+                          MoreArgs = list(
+                            data_raw = raww,
+                            data_clean = cleann,
+                            uuid_raw = "uuid",
+                            uuid_clean = "uuid",
+                            uuid_cleaning_log = "uuid"
+                          ),
+                          SIMPLIFY = F) %>% do.call(rbind, .)
+dd2 <- logg2 %>% 
+  mutate(binding = paste0(uuid, Question)) %>%
+  left_join(old_new_values2) %>% 
+  mutate(check_raw = `Old Value` == value_raw,
+         check_clean = `New Value` == value_clean) %>%
+  select(-c(binding, ID, `Follow-up`, Enumerator, Community, `Modified by?`, Notes, check_raw), 
+         uuid, Question,`Old Value`, `New Value`, value_raw, value_clean, check_clean, Reason)
+
+dd2 %>% filter(check_clean == F) %>% nrow()
+```
+With changing the T/F we are reducing to 705 wrong values!
+
+
+```{r}
+dd2 %>% filter(check_clean == F)
+```
+
+It seems "casuel _labour _Wages _construction _etc" has a typo. 
+
+```{r}
+dd2 %>% filter(check_clean == F, 
+               `New Value` != "casuel _labour _Wages _construction _etc") %>% nrow()
+```
+Down to 535. 
+
+```{r}
+dd2 %>% filter(check_clean == F, 
+               `New Value` != "casuel _labour _Wages _construction _etc")
+```
+
+It seems some values are off.   
+Action: please check those.
+
+# cleaninginspectoR
+
+```{r}
+inspec <- cleaninginspectoR::inspect_all(cleann, "uuid")
+```
+It seems you have lots of outliers.  
+
+```{r}
+inspec %>% 
+  filter(issue_type %in% c("log normal distribution outlier", "normal distribution outlier")) %>%
+  group_by(variable) %>%
+  tally()
+```
+Action: Please check all those variables for LOW and HIGH values.
+
+# Extra check:
+
+## calculations
+I don't have the KOBO so I am just checking the obvious one
+
+### calculation total hh 
+```{r}
+cleann %>% 
+  select(males_0_2y:total_hh) %>% 
+  mutate(across(.fns = as.numeric)) %>% 
+  mutate(total_cal = rowSums(across(males_0_2y:females_60_older)), 
+         check = total_cal == total_hh) %>% 
+  pull(check) %>% 
+  table(useNA = "ifany")
+```
+All good   
+Action: none needed  
+
+
+### age_pregnent_female_give_birth
+```{r}
+
+cleann$age_pregnent_female_give_birth %>% table(useNA = "ifany")
+```
+
+Action: change the 1 year old pregnant woman to NA?   
+
+## checks outliers LOW
+I am not sure what does estimate_hh_income refers to but you have very low values all the estimate_hh_income.XXXX have very low values. People earning .20 dollars. See below for anything less than 5(USD?) (0's excluded)
+```{r}
+cleann %>% 
+  select(uuid, starts_with("estimate_hh_income.")) %>% 
+  mutate(across(starts_with("estimate_hh_income."), ~(. < 5 & . > 0), .names = "{.col}_less_5"))
+```
+
+Action: needed please checked those values. 
