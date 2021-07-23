@@ -303,3 +303,133 @@ cleann %>%
 ```
 
 Action: needed please checked those values. 
+
+## calculation part 2
+
+### hh_children
+
+```{r}
+cleann %>% 
+  mutate(across(.cols = males_0_2y:females_12_17y, .fns = as.numeric)) %>% 
+  mutate(total_cal = rowSums(across(males_0_2y:females_12_17y)), 
+         check = total_cal == hh_children) %>% 
+  pull(check) %>% 
+  table(useNA = "ifany")
+
+cleann %>% 
+  mutate(across(.cols = males_0_2y:females_12_17y, .fns = as.numeric)) %>% 
+  mutate(total_cal = rowSums(across(males_0_2y:females_12_17y)), 
+         check = total_cal == hh_children) %>% 
+  filter(check == F) %>%
+  select(uuid, males_0_2y:females_12_17y,hh_children, total_cal)
+  
+```
+There are calculations that were not corrected. 
+Action: Please ammend
+
+### school_age_children
+```{r}
+cleann %>% 
+  mutate(across(.cols = males_3_5y:females_12_17y, .fns = as.numeric)) %>% 
+  mutate(total_cal = rowSums(across(males_3_5y:females_12_17y)), 
+         check = total_cal == school_age_children) %>% 
+  filter(check == F) %>% 
+  select(uuid, males_3_5y:females_12_17y,school_age_children, total_cal)
+```
+As above. 
+
+### hh_female
+The KOBO calculation includes children males and females from 6 to 11. That variable is only used to 
+filter on the *pregnant_female_give_birth*. If you are not going to analyse it, just delete it
+
+After checking for only females from 12 to 59, you should turn about 380 *pregnant_female_give_birth* and the 
+2 follow-up questions *pregnant_female_give_birth_yes*, *age_pregnent_female_give_birth* to NA. 
+```{r}
+cleann %>% 
+  mutate(across(.cols = c(females_12_17y, females_18_40, females_41_59), .fns = as.numeric)) %>% 
+  mutate(check_female = rowSums(across(c(females_12_17y, females_18_40, females_41_59))) > 0) %>% 
+  select(check_female, pregnant_female_give_birth) %>% 
+  table(useNA = "ifany")
+cleann %>% 
+  mutate(across(.cols = c(females_12_17y, females_18_40, females_41_59), .fns = as.numeric)) %>% 
+  mutate(check_female = rowSums(across(c(females_12_17y, females_18_40, females_41_59))) > 0, 
+         to_be_fixed = check_female == F & !is.na(pregnant_female_give_birth) ) %>% 
+  filter(to_be_fixed == T) %>%
+  select(uuid, check_female, pregnant_female_give_birth, pregnant_female_give_birth_yes, age_pregnent_female_give_birth) 
+```
+
+### sum_persons_having_difficulty
+You are suming ${seeing_memb}+${hearing_memb}+${walking_climbing_memb}+${remembering_memb}+${selft_care_memb}+${communicating_memb}
+and then create a loop from it. If you a person had 2 difficulites, you would have a sum of 2, hence creating a loop for 2 persons and not one. 
+Action: how are you going to deal with that? 
+
+### sum_rooms
+```{r}
+cleann %>% 
+  mutate(across(.cols = shelt_count.bedrooms:shelt_count.other_sh, .fns = as.numeric)) %>% 
+  mutate(total_cal = rowSums(across(shelt_count.bedrooms:shelt_count.other_sh)), 
+         check = total_cal == shelt_count.sum_rooms) %>% 
+  filter(check == F) %>% 
+  select(uuid, males_3_5y:females_12_17y,school_age_children, total_cal)
+
+```
+
+There 1849 calculation to be corrected.  
+Action: please ammend or remove the column if not needed
+
+# list of checks not implemented? 
+From your script you shared, you have a list of checks that were not implemented:  
+- pregnant_female_give_birth_yes > 2  
+- age_pregnent_female_give_birth < 15  
+- children_working.permanent_job_child_male > 3  
+- children_working.permanent_job_child_female > 3  
+- sharing_sanitation_facilities_yes > 14 "how more then 14 hh share a latrine?"  
+- how_many_shelters > 8 "how one hh can own 8 or more shelters?"  
+- shelter_rooms_note > 3  
+- shelt_count.bedrooms > 3  
+- shelt_count.living_rooms > 3  
+- shelt_count.kitchens > 3  
+- shelt_count.toilets	shelt_count.other_sh > 3  
+- shelt_count.sum_rooms > 3  
+
+Why were those not checked? 
+
+## Check for shelter rooms above 3
+```{r}
+
+cleann %>% 
+select(uuid, shelt_count.bedrooms:shelt_count.other_sh) %>% 
+mutate(across(shelt_count.bedrooms:shelt_count.other_sh, ~ (.> 3), .names = "{.col}_above_3")) %>% 
+summarise(across(ends_with("above_3"), sum))
+
+cleann %>% 
+select(uuid, shelt_count.bedrooms:shelt_count.other_sh) %>% 
+mutate(across(shelt_count.bedrooms:shelt_count.other_sh, ~ (.> 3), .names = "{.col}_above_3"))
+
+```
+## time residency 
+I am not sure what this refers to but the number of months is not the conversion of years into months. Please check again those 
+variables as they currently do not make sense.  
+
+# HHS 
+```{r}
+cleann %>% 
+  mutate(hhs1 = case_when(how_often_fs_happen == "often_10_plus" ~ 2, 
+                         how_often_fs_happen %in% c("rately_1_2", "sometimes_3_10") ~ 1, 
+                         is.na(how_often_fs_happen) ~ 0), 
+         hhs2 = case_when(often_go_sleep_night_hungry == "often_10_plus" ~ 2, 
+                         often_go_sleep_night_hungry %in% c("rately_1_2", "sometimes_3_10") ~ 1, 
+                         is.na(often_go_sleep_night_hungry) ~ 0), 
+         hhs3 = case_when(often_not_eating_whole_day_night == "often_10_plus" ~ 2, 
+                         often_not_eating_whole_day_night %in% c("rately_1_2", "sometimes_3_10") ~ 1, 
+                         is.na(often_not_eating_whole_day_night) ~ 0), 
+         hhs_score = hhs1 + hhs2 + hhs3, 
+         hhs_cat = cut(hhs_score, breaks = c(0,5,7), labels = c("low-none-severe", "extreme"), right = F)) %>%
+  select(hhs_cat, district) %>% table(useNA = "ifany") %>% prop.table(2)
+  
+
+```
+bonndheere, wadajir and yaarqshiid are at the 5% threshold. If any HHS score for a strata is above 5 % we should check
+with Matt and Katie.  
+Action: Are you going to report as Banadir as a whole or for each city boundary ? (maybe Khada and Dharkenley)
+
